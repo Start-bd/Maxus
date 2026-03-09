@@ -1,0 +1,113 @@
+services:
+  # Main Web Service (FastAPI)
+  - type: web
+    name: maxus-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: maxus-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: maxus-redis
+          type: redis
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NEWS_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: "[\"*\"]"
+      - key: LLM_PROVIDER
+        value: openai
+      - key: LLM_MODEL
+        value: gpt-3.5-turbo
+
+  # Celery Worker Service
+  - type: worker
+    name: maxus-worker
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: ENVIRONMENT
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: maxus-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: maxus-redis
+          type: redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: NEWS_API_KEY
+        sync: false
+      - key: LLM_PROVIDER
+        value: openai
+      - key: LLM_MODEL
+        value: gpt-3.5-turbo
+
+  # News Automation Cron Job (every 30 minutes)
+  - type: cron
+    name: maxus-news-automation
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -c "import httpx; import os; httpx.post(os.environ.get('API_URL', 'http://localhost') + '/api/v1/news/fetch?category=technology&limit=10')"
+    schedule: "*/30 * * * *"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: API_URL
+        fromService:
+          name: maxus-api
+          type: web
+          property: host
+      - key: DATABASE_URL
+        fromDatabase:
+          name: maxus-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          name: maxus-redis
+          type: redis
+          property: connectionString
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: NEWS_API_KEY
+        sync: false
+
+databases:
+  # PostgreSQL Database
+  - name: maxus-db
+    plan: free
+    databaseName: maxus
+    user: maxus_user
+
+  # Redis
+  - name: maxus-redis
+    plan: free
+    ipAllowList: []
