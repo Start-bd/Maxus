@@ -1,10 +1,5 @@
 """
-API Routes - Fixed version
-Bug fixes:
-- app_request: Request = None -> app_request: Optional[Request] = None
-- context: Optional[dict] = {} -> context: Optional[dict] = None (mutable default bug)
-- Article.metadata renamed to Article.article_metadata
-- project.dict() -> project.model_dump() for Pydantic v2 compatibility
+API Routes for Manus Agent System
 """
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -19,13 +14,11 @@ from app.services.llm_service import LLMService
 
 router = APIRouter()
 
-
 # ── Request / Response Models ─────────────────────────────────────────────────
 
 class TaskRequest(BaseModel):
     task: str
     project_id: Optional[int] = None
-    # BUG FIX: mutable default `{}` replaced with None; validated below
     context: Optional[dict] = None
 
     @field_validator("context", mode="before")
@@ -55,28 +48,26 @@ class ArticleCreate(BaseModel):
 
 # ── Helper ────────────────────────────────────────────────────────────────────
 
-def _get_llm_service(app_request: Optional[Request]) -> LLMService:
+def _get_llm_service(request: Request = None) -> LLMService:
     """Safely get LLM service from app state or create a new one"""
-    if app_request and hasattr(app_request.app.state, "llm_service"):
-        return app_request.app.state.llm_service
+    if request and hasattr(request.app.state, "llm_service"):
+        return request.app.state.llm_service
     return LLMService()
 
 
 # ── Orchestrator endpoint ─────────────────────────────────────────────────────
 
-@router.post("/agent/execute", response_model=TaskResponse)
+@router.post("/agent/execute", response_model=None)
 async def execute_agent_task(
     request: TaskRequest,
+    http_request: Request,
     db: Session = Depends(get_db),
-    # BUG FIX: was `Request = None` without Optional
-    app_request: Optional[Request] = None,
 ):
     """Execute a task using the orchestrator agent"""
     task_record = None
     try:
-        llm_service = _get_llm_service(app_request)
+        llm_service = _get_llm_service(http_request)
         orchestrator = OrchestratorAgent(llm_service)
-
         task_record = Task(
             project_id=request.project_id,
             task_type="agent_task",
@@ -105,7 +96,6 @@ async def execute_agent_task(
             status=task_record.status,
             result=result,
         )
-
     except Exception as e:
         if task_record is not None:
             task_record.status = "failed"
@@ -119,7 +109,6 @@ async def execute_agent_task(
 @router.post("/projects", status_code=201)
 async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     """Create a new project"""
-    # BUG FIX: use model_dump() for Pydantic v2 (dict() still works but deprecated)
     db_project = Project(**project.model_dump())
     db.add(db_project)
     db.commit()
@@ -219,7 +208,6 @@ async def fetch_news(
     category: str = "technology",
     keywords: Optional[str] = None,
     limit: int = 10,
-    app_request: Optional[Request] = None,
 ):
     """Fetch news articles"""
     from app.tools.news_fetch import NewsFetchTool
@@ -241,14 +229,13 @@ async def generate_content(
     topic: str,
     content_type: str = "article",
     keywords: Optional[List[str]] = None,
-    app_request: Optional[Request] = None,
+    http_request: Request = None,
     db: Session = Depends(get_db),
 ):
     """Generate content"""
-    llm_service = _get_llm_service(app_request)
+    llm_service = _get_llm_service(http_request)
     from app.agents.content_agent import ContentAgent
     content_agent = ContentAgent(llm_service)
-
     context = {
         "topic": topic,
         "keywords": keywords or [],
