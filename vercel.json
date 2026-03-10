@@ -1,21 +1,7 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "app/main.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb",
-        "runtime": "python3.11"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "app/main.py"
-    }
-  ],
+  "buildCommand": "pip install -r requirements.txt",
+  "devCommand": "python -m uvicorn app.main:app --reload",
+  "framework": "others",
   "env": {
     "ENVIRONMENT": "production",
     "DATABASE_URL": "sqlite:////tmp/manus_agent.db"
